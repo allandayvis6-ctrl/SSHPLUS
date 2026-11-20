@@ -1,93 +1,136 @@
 #!/bin/bash
-clear
-fun_bar () {
-comando[0]="$1"
-comando[1]="$2"
- (
-[[ -e $HOME/fim ]] && rm $HOME/fim
-${comando[0]} -y > /dev/null 2>&1
-${comando[1]} -y > /dev/null 2>&1
-touch $HOME/fim
- ) > /dev/null 2>&1 &
- tput civis
-echo -ne "\033[1;33m["
-while true; do
-   for((i=0; i<18; i++)); do
-   echo -ne "\033[1;31m#"
-   sleep 0.1s
-   done
-   [[ -e $HOME/fim ]] && rm $HOME/fim && break
-   echo -e "\033[1;33m]"
-   sleep 1s
-   tput cuu1
-   tput dl1
-   echo -ne "\033[1;33m["
-done
-echo -e "\033[1;33m]\033[1;37m -\033[1;32m OK !\033[1;37m"
-tput cnorm
+
+BADVPN_BIN="/bin/badvpn-udpgw"
+BADVPN_URL="https://www.dropbox.com/s/tgkxdwb03r7w59r/badvpn-udpgw"
+AUTOSTART_FILE="/etc/autostart"
+FIM_FILE="$HOME/fim"
+AUTOSTART_CMD='ps x | grep "[u]dpvpn" >/dev/null 2>&1 || screen -dmS udpvpn /bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 10000 --max-connections-for-client 10 --client-socket-sndbuf 10000'
+
+cleanup() {
+    tput cnorm 2>/dev/null
+    rm -f "$FIM_FILE"
 }
-[[ $(awk -F" " '{print $2}' /usr/lib/licence) != "@KIRITO_SSH" ]] && exit 0
-fun_udp1 () {
-    [[ -e "/bin/badvpn-udpgw" ]] && {
-    clear
-    echo -e "\033[1;32mINICIANDO O BADVPN... \033[0m\n"
-    fun_udpon () {
-        screen -dmS udpvpn /bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 1000 --max-connections-for-client 10
-        [[ $(grep -wc "udpvpn" /etc/autostart) = '0' ]] && {
-		    echo -e "ps x | grep 'udpvpn' | grep -v 'grep' || screen -dmS udpvpn /bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 10000 --max-connections-for-client 10 --client-socket-sndbuf 10000" >> /etc/autostart
-		} || {
-		    sed -i '/udpvpn/d' /etc/autostart
-		    echo -e "ps x | grep 'udpvpn' | grep -v 'grep' || screen -dmS udpvpn /bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 10000 --max-connections-for-client 10 --client-socket-sndbuf 10000" >> /etc/autostart
-		}
+trap 'cleanup; exit 1' INT TERM
+
+fun_bar() {
+    local cmd1="$1"
+    local cmd2="$2"
+
+    rm -f "$FIM_FILE"
+
+    (
+        if [[ -n "$cmd1" ]]; then
+            if declare -f "$cmd1" >/dev/null 2>&1; then
+                "$cmd1"
+            else
+                $cmd1 -y
+            fi
+        fi
+
+        if [[ -n "$cmd2" ]]; then
+            if declare -f "$cmd2" >/dev/null 2>&1; then
+                "$cmd2"
+            else
+                $cmd2 -y
+            fi
+        fi
+
+        touch "$FIM_FILE"
+    ) >/dev/null 2>&1 &
+
+    local bg_pid=$!
+    tput civis 2>/dev/null
+
+    while kill -0 "$bg_pid" 2>/dev/null || [[ ! -e "$FIM_FILE" ]]; do
+        echo -ne "\033[1;33m["
+        for ((i = 0; i < 18; i++)); do
+            echo -ne "\033[1;31m#"
+            sleep 0.1
+        done
+        echo -e "\033[1;33m]"
+        [[ -e "$FIM_FILE" ]] && break
         sleep 1
-    }
-    fun_bar 'fun_udpon'
-    echo -e "\n  \033[1;32mBADVPN ATIVO !\033[0m"
-    sleep 3
-    menu
-    } || {
+        tput cuu1 2>/dev/null
+        tput dl1 2>/dev/null
+    done
+
+    rm -f "$FIM_FILE"
+    echo -e "\033[1;33m[\033[1;31m##################\033[1;33m]\033[1;37m -\033[1;32m OK !\033[1;37m"
+    tput cnorm 2>/dev/null
+}
+
+# Verifica licença
+if [[ ! -f /usr/lib/licence ]] || [[ "$(awk '{print $2}' /usr/lib/licence)" != "@KIRITO_SSH" ]]; then
+    exit 0
+fi
+
+configure_autostart() {
+    touch "$AUTOSTART_FILE"
+    sed -i '/udpvpn/d' "$AUTOSTART_FILE"
+    echo "$AUTOSTART_CMD" >> "$AUTOSTART_FILE"
+}
+
+start_badvpn_service() {
+    screen -dmS udpvpn "$BADVPN_BIN" --listen-addr 127.0.0.1:7300 --max-clients 10000 --max-connections-for-client 10 --client-socket-sndbuf 10000
+    configure_autostart
+    sleep 1
+}
+
+install_badvpn_bin() {
+    local tmp_bin="$HOME/badvpn-udpgw.$$"
+    rm -f "$tmp_bin"
+
+    if wget -q --no-check-certificate "$BADVPN_URL" -O "$tmp_bin" && [[ -s "$tmp_bin" ]]; then
+        mv -f "$tmp_bin" "$BADVPN_BIN"
+        chmod 755 "$BADVPN_BIN"
+        return 0
+    else
+        rm -f "$tmp_bin"
+        return 1
+    fi
+}
+
+fun_udp1() {
+    if [[ ! -x "$BADVPN_BIN" ]]; then
         clear
         echo -e "\033[1;32mINSTALANDO O BADVPN !\033[0m\n"
-	    inst_udp () {
-	        cd $HOME
-            wget https://www.dropbox.com/s/tgkxdwb03r7w59r/badvpn-udpgw -o /dev/null
-            mv -f $HOME/badvpn-udpgw /bin/badvpn-udpgw
-            chmod 777 /bin/badvpn-udpgw
-	   }
-	   fun_bar 'inst_udp'
-	   echo -e "\n\033[1;32mINICIANDO O BADVPN... \033[0m\n"
-       fun_udpon2 () {
-           screen -dmS udpvpn /bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 1000 --max-connections-for-client 10
-           [[ $(grep -wc "udpvpn" /etc/autostart) = '0' ]] && {
-		       echo -e "ps x | grep 'udpvpn' | grep -v 'grep' || screen -dmS udpvpn /bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 10000 --max-connections-for-client 10 --client-socket-sndbuf 10000" >> /etc/autostart
-		   } || {
-		       sed -i '/udpvpn/d' /etc/autostart
-		       echo -e "ps x | grep 'udpvpn' | grep -v 'grep' || screen -dmS udpvpn /bin/badvpn-udpgw --listen-addr 127.0.0.1:7300 --max-clients 10000 --max-connections-for-client 10 --client-socket-sndbuf 10000" >> /etc/autostart
-		   }
-           sleep 1
-       }
-       fun_bar 'fun_udpon2'
-       echo -e "\n\033[1;32mBADVPN ATIVO !\033[0m"
-       sleep 3
-       menu
-    }
-} 
+        if ! fun_bar "install_badvpn_bin"; then
+            echo -e "\n\033[1;31mERRO AO BAIXAR O BADVPN !\033[0m"
+            sleep 3
+            command -v menu >/dev/null 2>&1 && menu
+            return 1
+        fi
+    fi
 
-fun_udp2 () {
+    clear
+    echo -e "\033[1;32mINICIANDO O BADVPN... \033[0m\n"
+    fun_bar "start_badvpn_service"
+    echo -e "\n  \033[1;32mBADVPN ATIVO !\033[0m"
+    sleep 3
+    command -v menu >/dev/null 2>&1 && menu
+}
+
+fun_udp2() {
     clear
     echo -e "\n\033[1;32mPARANDO O BADVPN...\033[0m\n"
-    fun_stopbad () {
+    fun_stopbad() {
         sleep 1
-        screen -r -S "udpvpn" -X quit
-        screen -wipe 1>/dev/null 2>/dev/null
-        [[ $(grep -wc "udpvpn" /etc/autostart) != '0' ]] && {
-		    sed -i '/udpvpn/d' /etc/autostart
-		}
+        screen -S udpvpn -X quit >/dev/null 2>&1
+        screen -wipe >/dev/null 2>&1
+        if [[ -f "$AUTOSTART_FILE" ]]; then
+            sed -i '/udpvpn/d' "$AUTOSTART_FILE"
+        fi
         sleep 1
     }
-    fun_bar 'fun_stopbad'
+    fun_bar "fun_stopbad"
     echo -e "\n  \033[1;31mBADVPN PARADO !\033[0m"
     sleep 3
-    menu
+    command -v menu >/dev/null 2>&1 && menu
 }
-[[ $(ps x | grep "udpvpn"|grep -v grep |wc -l) = '0' ]] &&  fun_udp1 || fun_udp2
+
+clear
+if screen -ls 2>/dev/null | grep -q "[.]udpvpn[[:space:]]"; then
+    fun_udp2
+else
+    fun_udp1
+fi
